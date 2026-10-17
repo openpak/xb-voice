@@ -1,0 +1,29 @@
+# MAIN host (quilted-waffle). Native Xbox xmatch (service id 6) for the dashboard's voice chat:
+# sessions are mirrored into openpak-voice. Private API only: published on the ZeroTier address.
+# Gateway: XBGW_BACKENDS=... 6=<zerotier-address>:26117
+[Unit]
+Description=OpenPak Xbox voice adapter (xmatch service 6; private API)
+After=openpak-voice.service openpak-xb-account.service
+Wants=openpak-voice.service
+
+[Container]
+ContainerName=openpak-xb-voice
+# REPLACE_DIGEST: image published by CI for the tag being deployed (no AutoUpdate=).
+Image=ghcr.io/openpak/xb-voice@sha256:REPLACE_DIGEST
+Network=openpak.network
+# REPLACE_IP: run pin-ips.sh --apply for a new quadlet on openpak.network.
+IP=REPLACE_IP
+PublishPort=10.212.63.196:26117:26117/tcp
+ReadOnly=true
+DropCapability=ALL
+NoNewPrivileges=true
+User=10001:10001
+EnvironmentFile=%h/openpak/deploy/xbox/xb-voice.env
+Volume=%h/openpak/deploy/xbox/pki/voice:/run/xb:ro
+
+[Service]
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

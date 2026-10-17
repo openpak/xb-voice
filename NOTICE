@@ -1,0 +1,15 @@
+OpenPak xb-voice
+Licensed under AGPL-3.0-only (LICENSE).
+
+Provenance
+----------
+The service-6 (xmatch) message layouts in internal/xmatch follow the public Xombie codec
+(libs/xblive/src/service/matchmaking.rs, https://github.com/XombieOnline/xombie, AGPL-3.0,
+base commit 7a1ef08045271437efc5938c996cb0c209a31408), cross-checked against the original
+Xbox dashboard (xonlinedash.xbe 5960) by static analysis; no code is copied, the test vector
+for the search header is the one in Xombie's tests. The voice chat behaviour is documented in
+https://github.com/openpak/docs (xbox/voice-chat.md).
+
+No Insignia, leaked Microsoft source or other third-party proprietary material was used.
+Shared contracts live in https://github.com/openpak/xb-common; the neutral voice session
+service this adapter calls is https://github.com/openpak/voice.

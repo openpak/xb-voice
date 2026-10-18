@@ -383,3 +383,20 @@ func TestRedactionKeepsConsoleIdentifiersOutOfLogs(t *testing.T) {
 		}
 	}
 }
+
+// The dashboard's create request carries flags<<4 in the id slot (captured 2026-10-18).
+func TestCreateWithFlagsInIDSlot(t *testing.T) {
+	s, _ := newServer()
+	alice := console("alice", 0xA)
+	body, _ := hex.DecodeString("4800000010000000000000000000feff0a00020f25e4cd2d2f670000000000000000000000000000000000000000000000000000000000000f000000010000000100000000000000")
+	code, resp := post(t, s, alice, "/xmatch/xmatchhost.srf", body)
+	info, _ := xmatch.DecodeInfo(resp)
+	if code != 200 || info.SessionID.IsZero() || info.SessionID[0] == 0x10 {
+		t.Fatalf("create with a flagged id: %d %x", code, resp)
+	}
+	other := append([]byte(nil), body...)
+	other[4] = 0x17
+	if code, _ := post(t, s, alice, "/xmatch/xmatchhost.srf", other); code != 404 {
+		t.Fatalf("unknown non-pattern id: %d", code)
+	}
+}

@@ -300,12 +300,20 @@ func redactBody(path string, b []byte) []byte {
 }
 
 func newID() (id xmatch.ID) {
-	for id.IsZero() {
+	for id.IsZero() || isCreateFlags(id) {
 		if _, err := rand.Read(id[:]); err != nil {
 			panic(err)
 		}
 	}
 	return id
+}
+
+// isCreateFlags reports whether id has the shape the dashboard puts in the id slot of a
+// create request: flags<<4 in the first byte, the rest zero (captured 2026-10-18: 10 00 ..).
+func isCreateFlags(id xmatch.ID) bool {
+	low := id[0] & 0x0f
+	id[0] = 0
+	return low == 0 && id == xmatch.ID{}
 }
 
 func (s *Server) host(ctx context.Context, info xbfeature.Info, body []byte) (int, []byte, error) {
@@ -317,10 +325,17 @@ func (s *Server) host(ctx context.Context, info xbfeature.Info, body []byte) (in
 	if ses.TitleID != DashboardTitle || (info.TitleID != 0 && info.TitleID != DashboardTitle) {
 		return 501, nil, fmt.Errorf("title %08x (connection title %08x) is not served: only the dashboard's voice chat", ses.TitleID, info.TitleID)
 	}
-	if ses.SessionID.IsZero() {
+	if ses.SessionID.IsZero() || (isCreateFlags(ses.SessionID) && !s.known(ses.SessionID)) {
 		return s.create(ctx, info, ses)
 	}
 	return s.update(ctx, info, ses)
+}
+
+func (s *Server) known(id xmatch.ID) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.init()
+	return s.byID[id] != nil
 }
 
 func (s *Server) create(ctx context.Context, info xbfeature.Info, ses xmatch.Session) (int, []byte, error) {

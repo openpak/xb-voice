@@ -299,11 +299,22 @@ func redactBody(path string, b []byte) []byte {
 	return out
 }
 
+// newID makes a session id the dashboard accepts: XNetRegisterKey takes only the key
+// types 0x00, 0x80 and 0xE0 in the top three bits of the first byte and answers 0x2726
+// for any other, and 0x80 is the online peer type. Bytes 1..7 are never all zero, so a
+// generated id can never match isCreateFlags (which needs id[1:] zero), whatever the
+// random bytes were.
 func newID() (id xmatch.ID) {
-	for id.IsZero() || isCreateFlags(id) {
-		if _, err := rand.Read(id[:]); err != nil {
-			panic(err)
-		}
+	if _, err := rand.Read(id[:]); err != nil {
+		panic(err)
+	}
+	return keyType(id)
+}
+
+func keyType(id xmatch.ID) xmatch.ID {
+	id[0] = 0x80 | id[0]&0x1f
+	if id == (xmatch.ID{id[0]}) {
+		id[7] = 1
 	}
 	return id
 }

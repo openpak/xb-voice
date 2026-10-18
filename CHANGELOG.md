@@ -1,5 +1,13 @@
 # Changelog — xb-voice
 
+## v0.1.2 — 2026-10-18
+
+- Fix: generated session ids carry key type bits `0x80` (online peer) in the first byte.
+  The dashboard registers the id with XNetRegisterKey, which accepts only the types
+  `0x00`, `0x80` and `0xE0` (`id[0] & 0xE0`) and answers 0x2726 for any other, so about
+  six of eight random ids ended in the Xbox Live error. Bytes 1..7 are also never all
+  zero, so a generated id can never read as a create.
+
 ## v0.1.1 — 2026-10-18
 
 - Fix: the dashboard's create request carries `flags<<4` in the session-id slot, not

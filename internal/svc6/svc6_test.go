@@ -400,3 +400,32 @@ func TestCreateWithFlagsInIDSlot(t *testing.T) {
 		t.Fatalf("unknown non-pattern id: %d", code)
 	}
 }
+
+// XNetRegisterKey accepts only the key types 0x00, 0x80 and 0xE0 (top three bits of the
+// first byte) and answers 0x2726 for the rest; a generated id must be the online peer
+// type 0x80 and must never read as a create.
+func TestGeneratedIDsCarryTheOnlinePeerType(t *testing.T) {
+	for i := 0; i < 20000; i++ {
+		id := newID()
+		if id[0]&0xE0 != 0x80 || isCreateFlags(id) || id.IsZero() {
+			t.Fatalf("id %x: type %#x, create-shaped %v", id[:], id[0]&0xE0, isCreateFlags(id))
+		}
+	}
+	// The corner random bytes would only hit by chance: an id with nothing after byte 0.
+	for first := 0; first < 256; first++ {
+		id := keyType(xmatch.ID{byte(first)})
+		if id[0]&0xE0 != 0x80 || isCreateFlags(id) {
+			t.Fatalf("first byte %#x gave %x", first, id[:])
+		}
+	}
+}
+
+func TestCreateReplyIDIsOnlinePeerType(t *testing.T) {
+	s, _ := newServer()
+	body, _ := hex.DecodeString("4800000010000000000000000000feff0a00020f25e4cd2d2f670000000000000000000000000000000000000000000000000000000000000f000000010000000100000000000000")
+	code, resp := post(t, s, console("alice", 0xA), "/xmatch/xmatchhost.srf", body)
+	info, _ := xmatch.DecodeInfo(resp)
+	if code != 200 || info.SessionID[0]&0xE0 != 0x80 {
+		t.Fatalf("create reply id: %d %x", code, resp)
+	}
+}

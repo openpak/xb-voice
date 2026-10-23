@@ -3,7 +3,7 @@
 The original Xbox adapter of OpenPak's neutral voice service
 ([`github.com/openpak/voice`](https://github.com/openpak/voice)). It serves native
 **service 6 (`xmatch`)** to the gateway for the dashboard's **VOICE CHAT**
-sessions. Evidence and wire formats: workspace `docs/xbox/voice-chat.md`.
+sessions. Evidence and wire formats: internal research notes.
 
 How the dashboard's voice chat works (and so what this does): the host console
 registers a session with `xmatch` and gets a session id and a key; the host invites

@@ -4,7 +4,7 @@
 // original Xbox dashboard's VOICE CHAT sessions, over xbfeature streams
 // (POST /xmatch/xmatch{host,client,hostdelete}.srf, Content-Type xon/6).
 //
-// What the dashboard does (docs/xbox/voice-chat.md): the host registers a
+// What the dashboard does (internal research notes): the host registers a
 // session and gets a session id and a key back; friends are invited through the
 // presence service; a friend looks the session up by id and receives the host's
 // network address and the key, then connects to the host console directly. The

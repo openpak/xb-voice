@@ -8,7 +8,7 @@ The service-6 (xmatch) message layouts in internal/xmatch follow the public Xomb
 base commit 7a1ef08045271437efc5938c996cb0c209a31408), cross-checked against the original
 Xbox dashboard (xonlinedash.xbe 5960) by static analysis; no code is copied, the test vector
 for the search header is the one in Xombie's tests. The voice chat behaviour is documented in
-https://github.com/openpak/docs (xbox/voice-chat.md).
+OpenPak's internal research notes.
 
 No Insignia, leaked Microsoft source or other third-party proprietary material was used.
 Shared contracts live in https://github.com/openpak/xb-common; the neutral voice session

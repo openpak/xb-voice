@@ -4,7 +4,7 @@
 // POST /xmatch/xmatchhost.srf (create or update a session), xmatchclient.srf
 // (search, and find-by-session-id) and xmatchhostdelete.srf, all
 // Content-Type xon/6. The layouts follow the public Xombie codec and were
-// cross-checked against the dashboard (docs/xbox/voice-chat.md section 3.2).
+// cross-checked against the dashboard (internal research notes section 3.2).
 // All integers are little endian. Decoding is strict and bounded: a malformed
 // body is an error, never a guess.
 package xmatch

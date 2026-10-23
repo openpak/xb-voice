@@ -5,8 +5,7 @@ name: release
 # runner (podman + qemu binfmt), so it costs no GitHub-hosted minutes.
 # The module github.com/openpak/xb-common is private and GITHUB_TOKEN cannot read other private
 # repositories, so the build reads it through a netrc build secret made from the repo secret
-# OPENPAK_MODULE_TOKEN when set (org convention) or else from the self-hosted runner host's own
-# `gh auth token`. The token never enters the image or git; the netrc is deleted at the end.
+# OPENPAK_MODULE_TOKEN (org convention). No host fallback: the runner host's own login is never used. The token never enters the image or git; the netrc is deleted at the end.
 on:
   push:
     tags: ['v*.*.*']
@@ -32,8 +31,9 @@ jobs:
           MODULE_TOKEN: ${{ secrets.OPENPAK_MODULE_TOKEN }}
         run: |
           umask 077
-          # Prefer a repo secret OPENPAK_MODULE_TOKEN; otherwise the runner host's own gh login.
-          TOKEN="${MODULE_TOKEN:-$(gh auth token)}"
+          # Fail closed: the repo secret OPENPAK_MODULE_TOKEN must be set.
+          if [ -z "${MODULE_TOKEN:-}" ]; then echo "::error::OPENPAK_MODULE_TOKEN is not set on this repo" >&2; exit 1; fi
+          TOKEN="$MODULE_TOKEN"
           printf 'machine github.com login x-access-token password %s\n' "$TOKEN" > "$RUNNER_TEMP/netrc"
           podman run --rm --pull=newer --platform "linux/$(podman info --format '{{.Host.Arch}}')" -v "$PWD:/src:Z" -v "$RUNNER_TEMP/netrc:/root/.netrc:ro,Z" -w /src \
             -e GOWORK=off -e GOFLAGS=-buildvcs=false -e 'GOPRIVATE=github.com/openpak/*' \

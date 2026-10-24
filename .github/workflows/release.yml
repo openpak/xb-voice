@@ -1,62 +1,121 @@
 name: release
 
 # Tag a release (v1.2.3) and this publishes ghcr.io/openpak/xb-voice:1.2.3, :1.2 and :latest for
-# amd64 and arm64. Runs only on pushed v*.*.* tags (or manually) on the OpenPak self-hosted
-# runner (podman + qemu binfmt), so it costs no GitHub-hosted minutes.
-# The module github.com/openpak/xb-common is private and GITHUB_TOKEN cannot read other private
-# repositories, so the build reads it through a netrc build secret made from the repo secret
-# OPENPAK_MODULE_TOKEN (org convention). No host fallback: the runner host's own login is never used. The token never enters the image or git; the netrc is deleted at the end.
+# amd64 and arm64. Runs only on pushed v*.*.* tags (or manually). Each arch builds natively on
+# a GitHub-hosted runner and pushes by digest only; the publish job then writes the one
+# multi-arch manifest under the release tags.
+# github.com/openpak/xb-common is read through a netrc build secret made from the org secret
+# OPENPAK_MODULE_TOKEN. The token never enters the image or git.
+#
+# Manual run with dry_run=true tests and builds both arches and pushes nothing.
 on:
   push:
     tags: ['v*.*.*']
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build every arch, push nothing
+        type: boolean
+        default: false
 
 permissions:
   contents: read
   packages: write
 
+env:
+  IMG: ghcr.io/${{ github.repository }}
+  PUSH: ${{ !(github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
+
 jobs:
-  image:
-    runs-on: [self-hosted, linux, podman]
+  test:
+    runs-on: ubuntu-24.04
+    env:
+      GOWORK: 'off'
+      GOFLAGS: -buildvcs=false
+      GOPRIVATE: github.com/openpak/*
     steps:
       - uses: actions/checkout@v5
-      - name: Scratch in the runner's temp, not the machine's shared /tmp
-        # /tmp is a RAM disk every build on the machine shares; when it filled on
-        # 2026-09-24 a compiler died and a job hung for hours instead of failing.
-        run: |
-          mkdir -p "$RUNNER_TEMP/scratch"
-          echo "TMPDIR=$RUNNER_TEMP/scratch" >> "$GITHUB_ENV"
-      - name: Test (Go container, GOWORK=off)
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+      - name: Module token
         env:
           MODULE_TOKEN: ${{ secrets.OPENPAK_MODULE_TOKEN }}
         run: |
           umask 077
-          # Fail closed: the repo secret OPENPAK_MODULE_TOKEN must be set.
-          if [ -z "${MODULE_TOKEN:-}" ]; then echo "::error::OPENPAK_MODULE_TOKEN is not set on this repo" >&2; exit 1; fi
-          TOKEN="$MODULE_TOKEN"
-          printf 'machine github.com login x-access-token password %s\n' "$TOKEN" > "$RUNNER_TEMP/netrc"
-          podman run --rm --pull=newer --platform "linux/$(podman info --format '{{.Host.Arch}}')" -v "$PWD:/src:Z" -v "$RUNNER_TEMP/netrc:/root/.netrc:ro,Z" -w /src \
-            -e GOWORK=off -e GOFLAGS=-buildvcs=false -e 'GOPRIVATE=github.com/openpak/*' \
-            docker.io/library/golang:1.26-bookworm sh -ec '
-              go vet ./...
-              go test -race -count=1 ./...'
-      # Job-scoped login, never the runner user's own. The runner context is not
-      # available in job-level env, so each step that touches the registry sets it.
-      - env:
-          REGISTRY_AUTH_FILE: ${{ runner.temp }}/auth.json
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
-      - env:
-          REGISTRY_AUTH_FILE: ${{ runner.temp }}/auth.json
+          # Fail closed: the secret OPENPAK_MODULE_TOKEN must be set.
+          if [ -z "${MODULE_TOKEN:-}" ]; then echo "::error::OPENPAK_MODULE_TOKEN is not set" >&2; exit 1; fi
+          printf 'machine github.com login x-access-token password %s\n' "$MODULE_TOKEN" > ~/.netrc
+      - run: go vet ./...
+      - run: go test -race -count=1 ./...
+      - if: always()
+        run: rm -f ~/.netrc
+
+  build:
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - if: env.PUSH == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          provenance: false
+          secrets: |
+            netrc=machine github.com login x-access-token password ${{ secrets.OPENPAK_MODULE_TOKEN }}
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+          outputs: ${{ env.PUSH == 'true' && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', env.IMG) || 'type=cacheonly' }}
+      - if: env.PUSH == 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+      - if: env.PUSH == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          retention-days: 1
+
+  publish:
+    needs: build
+    if: github.event_name == 'push' || !inputs.dry_run
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/digests
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - working-directory: ${{ runner.temp }}/digests
         run: |
           set -e
-          IMG="ghcr.io/${{ github.repository }}"
           case "${GITHUB_REF_NAME}" in v*) VER="${GITHUB_REF_NAME#v}";; *) VER="";; esac
-          podman manifest rm "$IMG:build" 2>/dev/null || true
-          podman build --secret id=netrc,src="$RUNNER_TEMP/netrc" --platform linux/amd64,linux/arm64 --manifest "$IMG:build" .
           TAGS="latest"; [ -n "$VER" ] && TAGS="$TAGS $VER $(echo "$VER" | cut -d. -f1,2)"
-          for t in $TAGS; do podman manifest push --all "$IMG:build" "docker://$IMG:$t"; done
-          podman manifest rm "$IMG:build"
+          ARGS=""; for t in $TAGS; do ARGS="$ARGS -t $IMG:$t"; done
+          # shellcheck disable=SC2046,SC2086
+          docker buildx imagetools create $ARGS $(printf "$IMG@sha256:%s " *)
           echo "pushed $IMG: $TAGS"
-      - name: Clear scratch and credentials
-        if: always()
-        run: rm -rf "$RUNNER_TEMP/scratch" "$RUNNER_TEMP/netrc" "$RUNNER_TEMP/auth.json"

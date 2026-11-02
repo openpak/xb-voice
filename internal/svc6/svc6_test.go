@@ -218,20 +218,12 @@ func TestHostFriendStranger(t *testing.T) {
 	}
 }
 
-func TestOnlyTheDashboardAndOnlyFindByID(t *testing.T) {
+func TestDashboardOnlyFindByIDAndTitleMismatch(t *testing.T) {
 	s, _ := newServer()
 	alice := console("alice", 0xA)
-	game := xmatch.Session{TitleID: 0x4c41000b, Host: hostAddr()}.Encode()
-	if code, _ := post(t, s, alice, "/xmatch/xmatchhost.srf", game); code != 501 {
-		t.Fatalf("a game's session: %d", code)
-	}
 	search := xmatch.Search{TitleID: DashboardTitle, ProcedureIndex: 1}.Encode()
 	if code, _ := post(t, s, alice, "/xmatch/xmatchclient.srf", search); code != 501 {
-		t.Fatalf("a search other than find-by-id: %d", code)
-	}
-	gameSearch := xmatch.FindRequest(0x4c41000b, xmatch.Addr{}, xmatch.ID{1}).Encode()
-	if code, _ := post(t, s, alice, "/xmatch/xmatchclient.srf", gameSearch); code != 501 {
-		t.Fatalf("a game's lookup: %d", code)
+		t.Fatalf("a dashboard search other than find-by-id: %d", code)
 	}
 	mismatch := console("alice", 0xA)
 	mismatch.TitleID = 0x4c41000b

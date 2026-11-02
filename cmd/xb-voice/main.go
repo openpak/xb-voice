@@ -99,6 +99,13 @@ func run() error {
 		}
 		srv.TTL = d
 	}
+	if v := os.Getenv("XB_VOICE_TITLE_TTL"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil || d < time.Minute {
+			return errors.New("XB_VOICE_TITLE_TTL must be a duration of at least 1m")
+		}
+		srv.TitleTTL = d
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 	go srv.Run(ctx, 30*time.Second)

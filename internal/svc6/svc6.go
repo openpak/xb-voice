@@ -17,9 +17,10 @@
 //     (an empty result), which the console shows as "no longer available";
 //   - the key and the host's address are only ever handed to an admitted friend.
 //
-// Only the dashboard's own title (0xFFFE0000) is served. Every other title's
-// matchmaking is answered 501: another service has to own that, and it is not
-// pretended here.
+// Every other title gets its own session pool (titles.go): sessions hosted under
+// a title id are only ever searched, found, updated and deleted under that same
+// title id. Those sessions are plain public matchmaking (no voice mirroring, no
+// friend check) and expire unless their host refreshes them.
 package svc6
 
 import (
@@ -100,12 +101,17 @@ type Server struct {
 	// DebugRequests logs each request body as hex with the console-identifying
 	// bytes of every address zeroed. The session key is never logged.
 	DebugRequests bool
-	Now           func() time.Time
+	// TitleTTL is how long a title's session stays searchable without a host
+	// create/update (default 15 min). Title sessions are not kept alive by
+	// lookups: only the host refreshing it counts.
+	TitleTTL time.Duration
+	Now      func() time.Time
 
-	mu      sync.Mutex
-	byID    map[xmatch.ID]*record
-	byHost  map[string]xmatch.ID
-	buckets map[uint64]*bucket
+	mu          sync.Mutex
+	byID        map[xmatch.ID]*record
+	byHost      map[string]xmatch.ID
+	byTitleHost map[titleHost]xmatch.ID
+	buckets     map[uint64]*bucket
 }
 
 type bucket struct {
@@ -127,6 +133,15 @@ func (s *Server) ttl() time.Duration {
 	return 2 * time.Hour
 }
 
+func (s *Server) titleTTL() time.Duration {
+	if s.TitleTTL > 0 {
+		return s.TitleTTL
+	}
+	// ponytail: 15 min is a guess; no title has been observed yet, so how often a
+	// real title refreshes its host record is unknown. Tune from a capture.
+	return 15 * time.Minute
+}
+
 func (s *Server) joinLease() time.Duration {
 	if s.JoinLease > 0 {
 		return s.JoinLease
@@ -138,6 +153,7 @@ func (s *Server) init() {
 	if s.byID == nil {
 		s.byID = map[xmatch.ID]*record{}
 		s.byHost = map[string]xmatch.ID{}
+		s.byTitleHost = map[titleHost]xmatch.ID{}
 		s.buckets = map[uint64]*bucket{}
 	}
 }
@@ -333,10 +349,13 @@ func (s *Server) host(ctx context.Context, info xbfeature.Info, body []byte) (in
 	if err != nil {
 		return 400, nil, err
 	}
-	if ses.TitleID != DashboardTitle || (info.TitleID != 0 && info.TitleID != DashboardTitle) {
-		return 501, nil, fmt.Errorf("title %08x (connection title %08x) is not served: only the dashboard's voice chat", ses.TitleID, info.TitleID)
+	if info.TitleID != 0 && info.TitleID != ses.TitleID {
+		return 501, nil, fmt.Errorf("title %08x does not match the connection's title %08x", ses.TitleID, info.TitleID)
 	}
 	if ses.SessionID.IsZero() || (isCreateFlags(ses.SessionID) && !s.known(ses.SessionID)) {
+		if ses.TitleID != DashboardTitle {
+			return s.titleCreate(info, ses)
+		}
 		return s.create(ctx, info, ses)
 	}
 	return s.update(ctx, info, ses)
@@ -405,6 +424,9 @@ func (s *Server) update(ctx context.Context, info xbfeature.Info, ses xmatch.Ses
 	coreID, key, id := r.coreID, r.key, r.id
 	s.mu.Unlock()
 	// The host is alive: renew its participant lease.
+	if coreID == "" {
+		return 200, xmatch.Info{SessionID: id, Key: key}.Encode(), nil
+	}
 	if _, err := s.Voice.Heartbeat(ctx, &voicev1.HeartbeatRequest{SessionId: coreID, AccountId: info.CoreAccountID, LeaseSeconds: 900}); err != nil {
 		log.Printf("svc6: host heartbeat: %v", err)
 	}
@@ -417,8 +439,11 @@ func (s *Server) client(ctx context.Context, info xbfeature.Info, body []byte) (
 	if err != nil {
 		return 400, nil, err
 	}
-	if q.TitleID != DashboardTitle || (info.TitleID != 0 && info.TitleID != DashboardTitle) {
-		return 501, nil, fmt.Errorf("search for title %08x is not served", q.TitleID)
+	if info.TitleID != 0 && info.TitleID != q.TitleID {
+		return 501, nil, fmt.Errorf("search for title %08x does not match the connection's title %08x", q.TitleID, info.TitleID)
+	}
+	if q.TitleID != DashboardTitle {
+		return s.titleSearch(q)
 	}
 	id, ok := q.FindID()
 	if !ok {
@@ -480,6 +505,9 @@ func (s *Server) remove(ctx context.Context, info xbfeature.Info, body []byte) (
 	if r == nil {
 		return 404, nil, nil
 	}
+	if r.title != DashboardTitle && (r.title != d.TitleID || (info.TitleID != 0 && info.TitleID != r.title)) {
+		return 404, nil, nil
+	}
 	if r.host != info.CoreAccountID {
 		return 403, nil, errors.New("delete by a console that is not the host")
 	}
@@ -502,6 +530,9 @@ func (s *Server) forget(id xmatch.ID) {
 		if s.byHost[r.host] == id {
 			delete(s.byHost, r.host)
 		}
+		if k := (titleHost{r.host, r.title}); s.byTitleHost[k] == id {
+			delete(s.byTitleHost, k)
+		}
 	}
 }
 
@@ -516,6 +547,9 @@ func (s *Server) end(ctx context.Context, id xmatch.ID, why string) {
 	s.forget(id)
 	ectx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
+	if r.coreID == "" {
+		return // a title session: nothing in the voice service
+	}
 	if _, err := s.Voice.EndSession(ectx, &voicev1.EndSessionRequest{SessionId: r.coreID, ActorAccount: r.host}); err != nil && status.Code(err) != codes.NotFound && status.Code(err) != codes.FailedPrecondition {
 		log.Printf("svc6: end session (%s): %v", why, err)
 	}
@@ -528,7 +562,11 @@ func (s *Server) expire(ctx context.Context) {
 	s.mu.Lock()
 	s.init()
 	for id, r := range s.byID {
-		if now.Sub(r.touched) > s.ttl() {
+		ttl := s.ttl()
+		if r.title != DashboardTitle {
+			ttl = s.titleTTL()
+		}
+		if now.Sub(r.touched) > ttl {
 			stale = append(stale, id)
 		}
 	}
@@ -555,7 +593,9 @@ func (s *Server) Run(ctx context.Context, every time.Duration) {
 		var live []hb
 		s.mu.Lock()
 		for _, r := range s.byID {
-			live = append(live, hb{r.coreID, r.host})
+			if r.coreID != "" {
+				live = append(live, hb{r.coreID, r.host})
+			}
 		}
 		s.mu.Unlock()
 		for _, h := range live {

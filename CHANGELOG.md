@@ -1,5 +1,17 @@
 # Changelog — xb-voice
 
+## v0.2.0 — 2026-11-02
+
+- Title matchmaking on service 6: every title other than the dashboard gets its own
+  session pool keyed by title id (no leakage across titles). Host create/update with
+  stored attributes and counts, `xmatchclient.srf` attribute search (tag/type/value
+  equality, null = wildcard, `num_users` against public open slots, newest first, at
+  most 10), find-by-id and delete scoped to the title, and host-refresh expiry
+  (`XB_VOICE_TITLE_TTL`, default 15 min).
+- The dashboard voice-chat path is unchanged.
+- Honest status: unit-tested only (`-race`); no title has been verified against it.
+  Search semantics and the TTL are inferred (Xombie leaves matching as a TODO).
+
 ## v0.1.2 — 2026-10-18
 
 - Fix: generated session ids carry key type bits `0x80` (online peer) in the first byte.

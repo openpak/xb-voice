@@ -5,7 +5,7 @@ OpenPak's Xbox Voice Server.
 | | |
 | --- | --- |
 | Network | Original Xbox |
-| Role | Native `xmatch` (service 6) session registry for the dashboard's voice chat |
+| Role | Native `xmatch` (service 6): title matchmaking (per-title session pools) and the dashboard's voice chat sessions |
 | Depends on | [`voice`](https://github.com/openpak/voice), [`xb-common`](https://github.com/openpak/xb-common) |
 | Used by | The Xbox gateway (`XBGW_BACKENDS`, service 6) |
 | Image | `ghcr.io/openpak/xb-voice` |
@@ -16,8 +16,11 @@ OpenPak's Xbox Voice Server.
 | Endpoint | What |
 | --- | --- |
 | `POST /xmatch/xmatchhost.srf` | Create a session (all-zero session id) or update one (host only); returns the session id and key |
-| `POST /xmatch/xmatchclient.srf` | Find a session by id; returns the host's address, the key and the counts |
+| `POST /xmatch/xmatchclient.srf` | Find a session by id, or (titles) search the title's sessions by attributes; returns host address, key, counts and attributes |
 | `POST /xmatch/xmatchhostdelete.srf` | Delete a session (host only) |
+
+Any title other than the dashboard (`0xFFFE0000`) gets its own session pool; see
+[protocol](docs/protocol.md). Unit-tested only: no title has been verified against it yet.
 
 ## Run
 

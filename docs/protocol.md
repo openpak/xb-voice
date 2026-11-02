@@ -21,3 +21,7 @@ So xb-voice is a session registry with real authorization, not a media path.
   the account core through the voice service (friend of the host, no block, active
   accounts). A refused lookup gets the same empty result as a session that does not
   exist. The key and the address are only given to an admitted friend.
+
+## Scope and limits
+
+Serves native service 6 (`xmatch`) to the gateway for the dashboard's VOICE CHAT sessions; it is the original Xbox adapter of [`voice`](https://github.com/openpak/voice). Session keys and addresses live in this process only (no database): a restart drops resolvable sessions and the dashboard shows "no longer available". It serves no title other than the dashboard (`0xFFFE0000`; everything else is `501`) and no search other than find-by-id (`501`). It does not verify the host's `XNADDR` against the address the gateway saw, and does not learn that a console left a chat (members stay in the voice service for their lease, the whole session for `XB_VOICE_SESSION_TTL`). No audio, codec or relay.

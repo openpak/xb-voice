@@ -12,9 +12,9 @@ sessions. Evidence and wire formats: internal research notes.
 - Session keys and addresses live in this process only (no database): a restart
   drops resolvable sessions and the dashboard shows "no longer available".
 
-## Status
+## Limits
 
-What it does not do, honestly: serve any title other than the dashboard
+What it does not do: serve any title other than the dashboard
 (`0xFFFE0000`; everything else is `501`), searches other than find-by-id (`501`),
 verify the host's `XNADDR` against the address the gateway saw (the feature
 `Info` does not carry it yet), or learn that a console left a chat (native

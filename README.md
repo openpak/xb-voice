@@ -30,7 +30,6 @@ GOWORK=off GOPRIVATE='github.com/openpak/*' go vet ./... && go test -race ./...
 ## Docs
 
 - [Protocol](docs/protocol.md)
-- [Evidence](docs/evidence.md)
 - [Deploy](docs/deploy.md)
 - [Notes](docs/notes.md)
 
